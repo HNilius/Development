@@ -5,9 +5,9 @@ account: toradi-hit
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 7218226
-bundleId: 6771835
+bundleId: 6819426
 url: https://toradi-hit.shinyapps.io/CLSIPrototyp/
-when: 1674636514.20911
-lastSyncTime: 1674636514.20912
+when: 1675777314.76682
+lastSyncTime: 1675777314.76683
 asMultiple: FALSE
 asStatic: FALSE

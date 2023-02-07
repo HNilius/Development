@@ -238,7 +238,7 @@ ui <- dashboardPage(
 <li style="text-align: left;">CLSI 09C: Measurement Procedure Comparison and Bias Estimation Using Patients Samples</li>
 <li style="text-align: left;">CLSI 21: Evaluation of Total Analytical Error for Quantitative Medical Laboratory Measurement Procesdures </em></li>
 </ul>
-                             <p style="text-align: justify;"> Die Auswertung beruht auf automatischen R Markdown Skripts. Der Source Code ist verfügbar <a href="https://github.com/" target="_blank">hier.</a></p>'
+                             <p style="text-align: justify;"> Die Auswertung beruht auf automatischen R Markdown Skripts. Der Source Code ist verfügbar <a href="https://github.com/HNilius/Development" target="_blank">hier.</a></p>'
             ),
             height = 550,
             width = 12
