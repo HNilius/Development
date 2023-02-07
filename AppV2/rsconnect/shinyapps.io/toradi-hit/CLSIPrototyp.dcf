@@ -1,0 +1,13 @@
+name: CLSIPrototyp
+title: CLSIPrototyp
+username:
+account: toradi-hit
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 7218226
+bundleId: 6771835
+url: https://toradi-hit.shinyapps.io/CLSIPrototyp/
+when: 1674636514.20911
+lastSyncTime: 1674636514.20912
+asMultiple: FALSE
+asStatic: FALSE

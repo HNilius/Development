@@ -1,0 +1,438 @@
+---
+output:
+  pdf_document:
+    latex_engine: xelatex
+mainfont: Open Sans
+---
+
+```{r setup_precision, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, dev="cairo_pdf")
+
+library(tidyr)
+library(dplyr)
+library(flextable)
+library(knitr)
+library(equatags)
+library(readxl)
+library(tibble)
+
+
+```
+
+
+```{r preprocess_pre, include = FALSE, warning = FALSE}
+
+extract_table <- function(tib, position = 1, n_rep = 5, n_days = 5){
+  # Helper function that creates the table for the extract_levels function
+  # Extracts the table from the whole tibble
+  # The number of rows and columns is set to 5
+  end_row <- position + n_rep -1
+  end_col <- n_days+1
+  tab <- tib[position:end_row,2:end_col]
+  tab <- as.data.frame(tab)
+  tab <- apply(tab,2,gsub,pattern = "<|>", replacement = "")
+  tab <- apply(tab,2,gsub,pattern = ",", replacement = ".")
+  tab <- data.frame(apply(tab,2,as.numeric))
+  tab<- data.frame(cbind(data.frame(tib[position:end_row,1]),tab))
+  colnames(tab) <- c("Replikat",paste(rep("Tag",n_days),c(1:n_days)))
+  return(tab)
+}
+
+extract_levels <- function(tib, n_lvl = 2, n_rep = 5, n_days = 5){
+  # Creates a list with the tables for each of the levels
+  positions <- NA
+  for(n in 1:n_lvl){
+    positions <- c(positions,1+7*(n-1))
+  }
+  positions <- positions[-1]
+  listtabs <- lapply(positions,extract_table, 
+                     tib = tib, 
+                     n_rep = n_rep, 
+                     n_days = n_days)
+  return(listtabs)
+}
+
+Calculate_CLSI <- function(tab){
+ # if(any(is.na(tab))){
+  #  stop("Ein Fehler ist mit der Tabelle aufgetreten: Es gibt leere Zellen")
+  #}
+  pivoted.tab <- tab %>%
+    pivot_longer(starts_with("Tag"), names_to = "Tag")
+  colnames(pivoted.tab) <- c("Rep","Tag","value")
+  print(pivoted.tab)
+  mod <- aov(value ~ factor(Tag),data = pivoted.tab)
+  sum.mod <- summary(mod)
+  n.run <- nrow(unique(pivoted.tab[2]))
+  n.rep <- nrow(unique(pivoted.tab[1]))
+  print(pivoted.tab)
+  MS1 <- sum.mod[[1]]$`Mean Sq`[1]
+  MS2 <- sum.mod[[1]]$`Mean Sq`[2]
+  n <- as.numeric(table(is.na(pivoted.tab$value))[1])
+  n0 <- n/length(levels(as.factor(pivoted.tab$Tag)))
+  Vw <- MS2
+  Vb <- (MS1-MS2)/n0
+  if(MS1 <= MS2){
+    Vb = 0
+  }
+  gm <- mean(pivoted.tab$value, na.rm = TRUE)
+  Sr <- sqrt(Vw)
+  Sb <- sqrt(Vb)
+  Swl <- sqrt((Vw+Vb))
+  CVr <- (Sr/gm)*100
+  CVb <- (Sb/gm)*100
+  CVwl <-(Swl/gm)*100
+  a1 <- (1/n0)
+  a2 = 1-(1/n0)
+  df1 <- n.run -1
+  df2 <- n-n.run
+  num <- (a1*MS1 + a2*MS2)^2 
+  den1 <- ((a1*MS1)^2)/df1
+  den2 <- ((a2*MS2)^2)/df2
+  dfwl <- num/(den1+den2)
+  fwl <- sqrt(qchisq(1-(0.05/metadata$n_lvl[1]),dfwl)/dfwl)
+  fr <- sqrt(qchisq(1-(0.05/metadata$n_lvl[1]), df2)/df2)
+  Sx <- sqrt((1/n.run)*(Swl^2-((n.rep-1)/n.rep)*Sr^2))
+  overall <- data.frame(matrix(c(n, MS1, MS2, n0, n.run, Vb, Vw, gm, Sr, CVr, Sb, CVb, Swl, CVwl, Sx, fr, fwl),ncol = 1))
+  print(overall)
+  colnames(overall) <- "Summary"
+  rownames(overall) <- c("n","MS1","MS2","n0","n.run","Vb", "Vw", "gm", "Sr","CVr","Sb","CVb","Swl","CVwl","Sx","fr","fwl")
+  overall <- round(overall,4)
+  return(t(overall))
+}
+
+Calc_Bias <- function(clsi.obj,tv){
+ gm <- clsi.obj$gm
+ sx <- clsi.obj$Sx
+ n.run <- clsi.obj$n.run
+ bias <- gm-tv
+ stud_t <- qt(0.975,n.run)
+ lower_verf_ci <- tv-stud_t*sx
+ upper_verf_ci <- tv+stud_t*sx
+ res_matrix <- data.frame(matrix(c((bias/tv)*100,lower_verf_ci, upper_verf_ci),ncol = 3)) 
+ colnames(res_matrix) <- c("Bias","LVI","UVI")
+ return(res_matrix)
+}
+
+validate_tables <- function(tab){
+  tmp <- as.numeric(unlist(tab[,-1]))
+  r1 <- FALSE
+  nas <- sum(is.na(tmp))
+  if(nas > 2){
+    r1 <- TRUE
+  }
+  r2 <- FALSE
+  dist <- dplyr::n_distinct(tmp)
+  if(dist < 2){
+    r2 <- TRUE
+  }
+  res <- c(r1,r2)
+  return(res)
+}
+
+```
+
+
+```{r Calculations_pre, include = FALSE}
+value.tabs <- extract_levels(precisionandbias, 
+                             n_lvl = metadata$n_lvl[1],
+                             n_rep = metadata$n_rep[1],
+                             n_days = metadata$n_days[1])
+validations <- lapply(value.tabs, validate_tables)
+validations <- data.frame(do.call(rbind,validations))
+colnames(validations) <- c("r1","r2")
+any_val <- any(validations)
+rulebreak <- apply(validations,2,any)
+
+
+
+str_zielwerte = ""
+output_str_cvr = ""
+output_str_cwl = ""
+output_str_bias = ""
+```
+
+
+
+
+# Verifikation von Präzision und Schätzung des Bias (CLSI 15-A3)
+
+`r if(any_val){"\\begin{comment}"}`
+
+```{r zielwerte_pre, include = FALSE, eval = !any_val}
+value.tabs.outliers <- value.tabs
+replacecounter <- 0
+
+  for(i in 1:metadata$n_lvl[1]){
+    tmp <- as.numeric(unlist(value.tabs.outliers[[i]][,-1]))
+    high_tmp <- outliers::grubbs.test(tmp, type = 10)
+    low_tmp <- outliers::grubbs.test(tmp, type = 10, opposite = TRUE)
+    mean_tmp <- mean(tmp, na.rm = TRUE)
+    if(high_tmp$p.value < 0.05 | low_tmp$p.value < 0.05){
+      if(max(tmp, na.rm = TRUE)-mean_tmp >= mean_tmp - min(tmp, na.rm = TRUE)){
+        pos_max <- which(tmp == max(tmp, na.rm = TRUE))[1]
+        tmp[pos_max] <- NA
+        replacemat <- matrix(tmp, ncol = ncol(value.tabs[[i]])-1)
+        print(replacemat)
+        value.tabs.outliers[[i]][,-1] <- replacemat
+        print(value.tabs.outliers[[i]])
+        replacecounter <- replacecounter + 1
+      }
+      if(max(tmp, na.rm = TRUE)-mean_tmp < mean_tmp - min(tmp, na.rm = TRUE)){
+        pos_min <- which(tmp == min(tmp, na.rm = TRUE))[1]
+        tmp[pos_min] <- NA
+        replacemat <- matrix(tmp, ncol = ncol(value.tabs[[i]])-1)
+        print(replacemat)
+        value.tabs.outliers[[i]][,-1] <- replacemat
+        print(value.tabs.outliers[[i]])
+        replacecounter <- replacecounter + 1
+      }
+    }
+  if(replacecounter >=2){
+    break
+    }
+  }
+
+value.tabs.outliers[[1]]
+
+clsi <- lapply(value.tabs.outliers, Calculate_CLSI)
+clsitab <- data.frame(do.call(rbind,clsi))
+frs <- clsitab$fr
+fwl <- clsitab$fwl
+uvlrs <- frs*metadata$cvr
+uvlwl <- fwl*metadata$cvil
+bias_calcs <- Calc_Bias(clsitab, tv = metadata$tv)
+str_zielwerte <- ""
+for(i in 1:metadata$n_lvl[1]){
+tmp_str <- paste0("\\item{Level ", i, ": ", metadata$tv[i]," ",metadata$unit[1],"}")
+str_zielwerte <- paste(str_zielwerte, tmp_str)
+}
+```
+
+<br>
+
+## Vorwort
+
+Die Berechnungen der Verifikation von Präzision und Bias basieren auf Messungen von `r metadata$n_lvl[1]` Leveln an `r metadata$n_days[1]` Tagen. Jeden Tag wurden `r metadata$n_rep[1]` Replikate in Serie gemessen. 
+Die Zielwerte der Levels waren:
+\begin{itemize}
+`r str_zielwerte`
+\end{itemize}
+
+
+```{r outlier_pre, include = FALSE ,warning = FALSE, eval = !any_val}
+ouput_outliers <- ""
+if(replacecounter > 0){
+  index <- which(!is.na(unlist(value.tabs)) & is.na(unlist(value.tabs.outliers)))
+}
+```
+
+<br>
+
+## Ausreisser Analyse
+Ausreisser wurden identifiziert durch einen bidirektionalen Grubbs Test. Es wurden maximal zwei Messungen im gesamten Experiment und maximal eine Messung pro Level aus den Berechnungen ausgenommen. 
+`r ifelse(replacecounter == 0, "Es wurden in diesem Experiment \\textbf{keine} Aussreisser entfernt.", ifelse(replacecounter == 1, paste("Es wurde in diesem Experiment \\textbf{", replacecounter, "} Aussreisser entfernt."), paste("Es wurden in diesem Experiment \\textbf{", replacecounter, "} Aussreisser entfernt.")))`
+
+</br>
+
+## Präzision
+Die Präzision des Tests `r metadata$name[1]` wurde geschätzt durch einen Einweg-ANOVA. Die Ergebnisse des ANOVA sind in der folgenden Tabelle beschrieben:
+
+```{r tab1_pre, echo = FALSE, warning = FALSE, eval = !any_val}
+tab_clsi <- data.frame(t(do.call(rbind,clsi)))
+tab_clsi <- rownames_to_column(tab_clsi)
+lvls_tab <- "ANOVA-Ergebnisse"
+for(i in 1:metadata$n_lvl[1]){
+  lvls_tab <-c(lvls_tab, paste("Level",i))
+}
+colnames(tab_clsi) <- lvls_tab
+tab_clsi_first <- tab_clsi[-c(5,8:17),]
+ft1 <- flextable(tab_clsi_first)
+ft1 <- compose(ft1,i = 4 , j = 1,  value = as_paragraph(
+  "n",as_sub("0")))
+ft1 <- compose(ft1,i = 5 , j = 1,  value = as_paragraph(
+  "V",as_sub("b")))
+ft1 <- compose(ft1,i = 6 , j = 1,  value = as_paragraph(
+  "V",as_sub("w")))
+ft1 <- autofit(ft1)
+ft1
+
+```
+*n – Anzahl der Messungen, MS1 – Interassay mean squares (mittleres Abweichungsquadrat), MS2 – Intraassay mean squares (mittleres Abweichungsquadrat),$n_0$ - Durchschnittliche Messungen pro Tag, $V_b$ - Interassay Varianzkomponente, $V_w$ - Intraassay Varianzkomponente*
+
+</br>
+
+\newpage
+
+Aus diesen Werten wurde dann nach den Formeln beschrieben in der CLSI EP15-A3 Guideline die Standardabweichungen und die Variationskoeffizenten berechnet: 
+
+```{r ret2, echo = FALSE, warning = FALSE}
+tab_clsi_second <- tab_clsi[c(8,9,11,13,10,12,14),]
+colnames(tab_clsi_second)[1] <- "Ergebnisse"
+ft1_2 <- flextable(tab_clsi_second)
+ft1_2 <- compose(ft1_2,i = 1 , j = 1,  value = as_paragraph(as_equation("\\bar{x}",width = 0.05), " [",metadata$unit[1],"]" ))
+ft1_2 <- compose(ft1_2,i = 2 , j = 1,  value = as_paragraph(
+  "SD",as_sub("r"), " [",metadata$unit[1],"]"))
+ft1_2 <- compose(ft1_2,i = 5 , j = 1,  value = as_paragraph(
+  "CV",as_sub("r")," [%]"))
+ft1_2 <- compose(ft1_2,i = 3 , j = 1,  value = as_paragraph(
+  "SD",as_sub("b"), " [",metadata$unit[1],"]"))
+ft1_2 <- compose(ft1_2,i = 6 , j = 1,  value = as_paragraph(
+  "CV",as_sub("b")," [%]"))
+ft1_2 <- compose(ft1_2,i = 4 , j = 1,  value = as_paragraph(
+  "SD",as_sub("wl"), " [",metadata$unit[1],"]"))
+ft1_2 <- compose(ft1_2,i = 7 , j = 1,  value = as_paragraph(
+  "CV",as_sub("wl")," [%]"))
+ft1_2 <- autofit(ft1_2)
+ft1_2
+```
+*$\bar{x}$ - Gesamtmittelwer aller Messungen eines Levels, $SD_r$ - Standardabweichung in Serie, $SD_b$ - Standardabweichungen Tag-zu-Tag, $SD_{wl}$ Gesamtstandardabweichung innerhalb eines Labors, $CV_r$ - Variationskoeffizent in Serie, $CV_b$ - Variationskoeffizent Tag-zu-Tag, $CV_{wl}$ Variationskoeffizent innerhalb eines Labors.*
+
+```{r precisionent_pre, include = FALSE, eval = !any_val}
+output_str_cvr <- ""
+for(i in 1:metadata$n_lvl[1]){
+  if(clsi[[i]][,10] < metadata$cvr[i]){
+    output_str_cvr <- paste0(output_str_cvr,"Für das Level ",i, " liegt der $CV_r$ (",clsi[[i]][,10]," %) unterhalb der Vorgabe (",metadata$cvr[i]," %). Die Methode funktioniert für dieses Level **korrekt**. ")
+  }
+  if(between(clsi[[i]][,10],metadata$cvr[i],uvlrs[i])){
+    output_str_cvr <- paste0(output_str_cvr, "Für das Level ",i, " liegt der $CV_r$ (",clsi[[i]][,10]," %) über der Vorgabe (",metadata$cvr[i]," %), aber unter dem Oberen Verifikations Limit (",uvlrs[i]," %). Die Methode funktioniert für dieses Level **korrekt**. ")
+  }
+  if(clsi[[i]][,10] > uvlrs[i]){
+    output_str_cvr <- paste0(output_str_cvr, "Für das Level ",i, " liegt der $CV_r$ (",clsi[[i]][,10],"%) über der Vorgabe (",metadata$cvr[i]," %) und über dem Oberen Verifikations Limit (",uvlrs[i]," %). Die Methode funktioniert für dieses Level **nicht korrekt**. Bitte überprüfen Sie dies. ")
+  }
+  else{
+    "FEHLER"
+  }
+}
+
+output_str_cwl <- ""
+for(i in 1:metadata$n_lvl[1]){
+  if(clsi[[i]][,14] < metadata$cvil[i]){
+    output_str_cwl <- paste0(output_str_cwl,"Für das Level ",i, " liegt der $CV_{wl}$ (",clsi[[i]][,14]," %) unterhalb der Vorgabe  (",metadata$cvil[i]," %). Die Methode funktioniert für dieses Level **korrekt**. ")
+  }
+  if(between(clsi[[i]][,14],metadata$cvil[i],uvlwl[i])){
+    output_str_cwl <- paste0(output_str_cwl, "Für das Level ",i, " liegt der $CV_{wl}$ (",clsi[[i]][,14]," %) über der Vorgabe (",metadata$cvil[i]," %), aber unter dem Oberen Verifikations Limit (",uvlwl[i]," %). Die Methode funktioniert für dieses Level **korrekt**. ")
+  }
+  if(clsi[[i]][,14] > uvlwl[i]){
+    output_str_cwl <- paste0(output_str_cwl, "Für das Level ",i, " liegt der $CV_{wl}$ (",clsi[[i]][,14]," %) über der Vorgabe (",metadata$cvil[i]," %) und über dem Oberen Verifikations Limit (",uvlwl[i]," %). Die Methode funktioniert für dieses Level **nicht korrekt**. Bitte überprüfen Sie dies. ")
+  }
+  else{
+    "FEHLER"
+  }
+}
+```
+
+### Bewertung
+`r output_str_cvr`
+
+<br> 
+
+`r output_str_cwl`
+
+\newpage
+
+## Bias
+
+<br>
+
+Bias bezeichnet die Abweichung des Gesamtmittelwertes aller Messungen vom wahren Wert für das jeweilige Level. Um zu überprüfen, ob es einen statistisch relevanten Bias gibt, wird im ersten Schritt, ein 95% Verifikationsintervall des wahren Wertes errechnet. Liegt der Gesamtmittelwert der Messungen in diesem Intervall, liegt **kein** statistisch relevanter Bias vor. Im zweiten Schritt wird überprüft, ob der Bias den maximal akzeptablen Bias nicht überschreitet.
+
+Die Ergebnisse der Bias Berechnung sind:
+```{r bias, echo = FALSE, warning = FALSE, eval = !any_val}
+con_n_bias <- matrix(c("x","Zielwert","Bias [%]","Verifikationsintervall"),nrow = 1)
+for(i in 1:metadata$n_lvl[1]){
+  tmp <- matrix(c(clsitab$gm[i],metadata$tv[i],round(bias_calcs$Bias[i],2),
+                paste0("[",round(bias_calcs$LVI[i],2),"; ",round(bias_calcs$UVI[i],2),"]")), nrow = 1)
+  con_n_bias <- rbind(con_n_bias,tmp)
+}
+con_n_bias <- t(data.frame(con_n_bias))
+bias_tab <- lvls_tab
+bias_tab[1] <- "Eigentschaften"
+colnames(con_n_bias) <- bias_tab
+
+ft2 <- flextable(data.frame(con_n_bias))
+ft2 <- compose(ft2, j = 1 ,part = "header", value = as_paragraph(""))
+ft2 <-  compose(ft2,i = 1 , j = 1,  value = as_paragraph(as_equation("\\bar{x}",width = 0.05) ))
+ft2 <- autofit(ft2)
+ft2
+```
+
+### Bewertung
+
+```{r strbias, include= FALSE, eval = !any_val}
+output_str_bias <- ""
+for(i in 1:metadata$n_lvl[1]){
+  if(between(abs(clsitab$gm[i]),bias_calcs$LVI[i],bias_calcs$UVI[i])){
+    output_str_bias <- paste0(output_str_bias,"Für das Level ",i, " liegt **kein statistisch signifikanter Bias** vor. Der Gesamtmittelwert $\\bar{x}$ (",clsitab$gm[i],") liegt im Verifikationsintervall (",round(bias_calcs$LVI[i],4)," - ",round(bias_calcs$UVI[i],4),"). ")
+  }
+  if(!between(clsitab$gm[i],bias_calcs$LVI[i],bias_calcs$UVI[i]) & abs(bias_calcs$Bias[i]) <= metadata$abias[i]){
+    output_str_bias <- paste0(output_str_bias, "Für das Level ",i, " liegt ein **statistisch signifikanter Bias** vor. Der Gesamtmittelwert $\\bar{x}$ (",clsitab$gm[i],") liegt ausserhalb Verifikationsintervall (",round(bias_calcs$LVI[i],4)," - ",round(bias_calcs$UVI[i],4),"). Allerdings ist der Bias (",round(bias_calcs$Bias[i],2)," %) **im Bereich** des erlaubten Bias (",metadata$abias[i]," %). ")
+  }
+  if(!between(clsitab$gm[i],bias_calcs$LVI[i],bias_calcs$UVI[i]) & abs(bias_calcs$Bias[i]) > metadata$abias[i]){
+    output_str_bias <- paste0(output_str_bias, "Für das Level ",i, " liegt ein **statistisch signifikanter Bias** vor. Der Gesamtmittelwert $\\bar{x}$ (",clsitab$gm[i],") liegt ausserhalb Verifikationsintervall (",round(bias_calcs$LVI[i],4)," - ",round(bias_calcs$UVI[i],4),"). Der Bias (",round(bias_calcs$Bias[i],2)," %) ist  **ausserhalb** des Bereichs des erlaubten Bias (",metadata$abias[i]," %). Bitte überprüfen Sie die Methode. ")
+  }
+  else{
+    "FEHLER"
+  }
+}
+```
+`r output_str_bias`
+
+## Schätzung des totalen analytischen Fehlers
+
+Der totale analytische Fehler kann geschätzt werden nach CLSI EP-A21 geschätzt werden durch folgende Formel:
+$$\%TAE = |\%Bias| + 1.96 * \%CV_{wl}* (1+\frac{\%Bias}{100})  $$
+</br>
+
+Das Sigma errechnet sich dann durch:
+$$ \sigma = \frac{\%ATE - |\%Bias|}{\%CV_{wl}*(1+\frac{\%Bias}{100})} $$
+*%ATE - Maximal erlaubter totaler analytischer Fehler (`r round(metadata$relate[1],2)` %)*
+
+Die Ergebnisse dieser Berechnung sind:
+```{r sigma_prec, echo = FALSE, warning = FALSE}
+bias_cal <- as.numeric(bias_calcs$Bias)
+cvwl_cal <- as.numeric(clsitab$CVwl)
+tae_cal <- abs(bias_cal) + 1.96 * cvwl_cal * (1 + (bias_cal/100))
+sigma <- (metadata$relate[1] - abs(bias_cal))/(cvwl_cal*(1+(bias_cal/100)))
+lvls_cal <- c("x",paste("Level",c(1:metadata$n_lvl[1])))
+tmp_colnames <- c("TAE [%]", "Sigma")
+tmp_comb <- rbind(tae_cal, sigma)
+tmp_comb <- round(tmp_comb,2)
+out <- data.frame(cbind(tmp_colnames,tmp_comb))
+colnames(out) <- lvls_cal
+ft4 <- flextable(out)
+ft4 <- compose(ft4,i = 2 , j = 1,  value = as_paragraph(as_equation("\\sigma")))
+ft4 <-  compose(ft4, j = 1 ,part = "header", value = as_paragraph(""))
+ft4 <- autofit(ft4)
+ft4
+
+```
+*CAVE: Für eine genaue Bestimmung des totalen analytischen Fehlers muss ein Experiment nach CLSI 21 durchgeführt werden.*
+
+
+`r if(any_val){"\\end{comment}"}`
+
+
+
+
+
+`r if(!any_val){"\\begin{comment}"}`
+# Fehler
+
+```{r validation, include = FALSE}
+output_validation <- ""
+if(rulebreak[1]){
+  tmp_string <- paste0("Für das/die Level ", which((validations[,1] == TRUE))," liegt ein Fehler in der Tabelle vor.
+                      Entweder sind zu viele Felder leer oder es sind nicht erlaubte Sonderzeichen vorhanden.
+                      Bitte überprüfen Sie dies.")
+  output_validation <- c(output_validation, tmp_string)
+  }
+if(rulebreak[2]){
+  tmp_string <- paste0("Für das/die Level ", which(validations[,2] == TRUE), " liegt ein Fehler in der Tabelle vor.
+                      Es gibt keine Variation in den Werten. Damit kann kein ANOVA berechnet werden. Bitte 
+                      überprüfen Sie dies.")
+  output_validation <- c(output_validation, tmp_string)
+}
+```
+`r output_validation`
+
+`r if(!any_val){"\\end{comment}"}`

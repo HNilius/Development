@@ -1,0 +1,159 @@
+---
+title: 
+output: 
+  pdf_document:
+    latex_engine: xelatex
+    number_sections: true
+mainfont: Open Sans
+params:
+  Precision: TRUE
+  precisionandbias: precisionandbias
+  Legacy: TRUE
+  legacy_df: legacy_df
+  Method: TRUE
+  mc: mc
+  TAE: TRUE
+  tae: tae
+  metadata: metadata
+  insert: NULL
+header-includes:
+  \usepackage{pdfpages}
+  \usepackage{comment}
+  \usepackage{fancyhdr}
+
+
+---
+\pagestyle{fancy}
+\setlength{\headheight}{12.5307pt}
+\fancyhead{}
+\fancyhead[L]{\textit{Erstellt mit ILVA - Version 2}}
+\fancyhead[R]{\textit{Methodenverifikation: `r metadata$name[1]`}}
+\fancyfoot{}
+\fancyfoot[C]{\thepage}
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+```
+
+```{r libs, include = FALSE, warning= FALSE}
+library(tidyr)
+library(dplyr)
+library(flextable)
+library(knitr)
+library(equatags)
+library(readxl)
+
+precisionandbias <- params$precisionandbias
+metadata <- params$metadata
+
+metadata[,c(2:8,10,13,14)] <- lapply(metadata[,c(2:8,10,13,14)],as.numeric) 
+```
+
+\thispagestyle{empty}
+![](Logo.png){ width="600" height="200" style="display: block; margin: 0 auto" }
+
+\LARGE
+\textbf{Verifizierungsbericht für `r metadata$name[1]`}
+\normalsize
+
+
+\newpage
+\renewcommand{\contentsname}{Inhaltsverzeichnis}
+\tableofcontents
+\newpage
+# Vorwort
+Dieser Verifikationsbericht wurde erstellt mit der Insel Laboratory Verification App (ILVA) des Zentrums 
+für Labormedizin & dem Universitätsinstitut für Klinische Chemie des Inselspital Berns. 
+Die Berechnungen basieren auf einer Excel-Datei und wird durch automatisierte R Markdown Skripte ausgewertet. 
+Das Tool ist verfügbar unter [https://toradi-hit.shinyapps.io/CLSIprototyp](https://toradi-hit.shinyapps.io/CLSIprototyp) und der Source Code ist verfügbar unter https://github.com/henningnilius/CLSI. Der Bericht beschreibt die Verifizierung des Tests `r metadata$name[1]` nach den folgenden Guidelines:
+\begin{itemize}
+`r ifelse(Precision, "\\item{\\textbf{CLSI 15-A3: User Verification of Precision and Estimation of Bias – Third Edition}}","")`
+`r ifelse(Method, "\\item{\\textbf{CLSI 09c: Measurement Procedure Comparison and Bias Estimation Using Patients Samples – Third Edition}}","")`
+`r ifelse(TAE, "\\item{\\textbf{CLSI 21: Evaluation of Total Analytical Error for Quantitative Medical Laboratory Measurement Procedures – Second Edition}}","")`
+`r ifelse(Legacy, "\\item{\\textbf{Methodenverifikation nach dem Script von Prof. Dr. med. Alexander B. Leichtle, FAMH-equiv.}}","")`
+\end{itemize}
+`r ifelse(!is.null(insert), "Das Messprinzip der Methode ist in der angefügten Packungsbeilage beschrieben.","")`
+Die Zugrunde liegende Excel-Datei wird separat gespeichert.
+
+\newpage
+```{r Precision, eval = params$Precision, child = "Precision.Rmd"}
+```
+
+```{r prog1, include= FALSE}
+shiny::setProgress(0.25)  # set progress to 50%
+```
+
+\newpage
+```{r Methodenvergleich, eval = params$Method, child = "Methodenvergleich.Rmd"}
+```
+
+```{r prog2, include =FALSE}
+shiny::setProgress(0.50)  # set progress to 50%
+```
+
+\newpage
+```{r TAE, eval = params$TAE, child = "TAE.Rmd"}
+```
+
+```{r prog3, include =FALSE}
+shiny::setProgress(0.75)  # set progress to 50%
+```
+
+\newpage
+```{r Legacy, eval = params$Legacy, child = "Legacy.Rmd"}
+```
+
+```{r prog4, include=FALSE}
+shiny::setProgress(0.90)  # set progress to 50%
+```
+
+\newpage
+
+# Bewertung und Unterschrift
+
+## Bewertung:
+\begin{Form}
+  \TextField[name=Bewertung, width = 15cm,height = 10cm]{ }
+\end{Form}
+
+<br>
+
+## Unterschrift:
+\begin{Form}
+  \TextField[name=Unterschrift, width = 15cm,height = 2 cm, value = {}]{ }
+\end{Form}
+
+                        
+\newpage
+
+
+# Referenzbereich
+\begin{Form}
+  \ChoiceMenu[print,combo,default=Box 1,name=box1]{}{Unveränderte übernahme aus der Packungsbeilage, Neueinführung für `r metadata$name[1]` (siehe Bewertung)}
+\end{Form}
+
+# Freigabe für Routinebetrieb
+
+Die Methode `r metadata$name[1]` wird für den Routinebetrieb freigegeben am:
+
+\begin{Form}
+  \TextField[name=Datum, width = 5cm,height = 0.5 cm, value = {}]{Datum:}
+\end{Form}
+
+# Notizen
+\begin{Form}
+  \TextField[name=Notizen, width = 15cm,height = 10cm]{ }
+\end{Form}
+
+`r if(is.null(params$insert)){"\\begin{comment}"}`
+
+\newpage
+\includepdf[pages={-}]{`r params$insert`}
+
+`r if(is.null(params$insert)){"\\end{comment}"}`
+
+```{r final, include = FALSE}
+shiny::setProgress(1)  # set progress to 50%
+```

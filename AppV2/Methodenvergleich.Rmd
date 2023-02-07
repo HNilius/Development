@@ -1,0 +1,199 @@
+---
+output:
+  pdf_document:
+    latex_engine: xelatex
+mainfont: Open Sans
+params: 
+  mc: mc
+  metadata: metadata
+---
+
+```{r setup_methodecomparison, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(BlandAltmanLeh)
+library(readxl)
+library(mcr)
+library(ggplot2)
+library(ggpubr)
+library(flextable)
+library(confintr)
+library(ggExtra)
+library(tibble)
+
+empty_mc <- FALSE
+mc <- data.frame(mc)
+if(nrow(mc) == 0){
+  empty_mc <- TRUE
+}
+```
+```{r mc_eval, include= FALSE, eval = !empty_mc}
+mc <- apply(mc,2,gsub,pattern = "<|>", replacement = "")
+mc <- apply(mc,2,gsub,pattern = ",", replacement = ".")
+mc <- data.frame(apply(mc,2,as.numeric))
+if(nrow(mc) == 0){
+  empty_mc <- TRUE
+}
+```
+
+# Methodenvergleich (CLSI 09c)
+
+</br>
+`r if(empty_mc){"\\begin{comment}"}`
+## Vorwort
+Der Methodenvergleich nach CLSI 09c basiert auf der Messung von `r nrow(mc)` Proben
+mit dem Kandidatentest `r metadata$name_legacy[1]` (Kandidatentest) und dem 
+Vergleichstest `r metadata$name_legacy[2]`.
+
+</br>
+
+## Visuelle Vergleich
+Die Guideline empfiehlt zuerst die beiden Methoden visuell miteinander zu vergleichen. Dafür werden Streudiagramme und Vergleichsdiagramme vorgeschlagen.
+</br>
+
+### Streudiagramm
+Dieses Diagramm zeigt die Werte des Vergleichstest `r metadata$name_legacy[2]` auf der X-Achse und die Werte des Kandidatentest `r metadata$name_legacy[1]`. Je näher die Punkte der Diagonalen sind, desto ähnlicher sind die Test.
+
+</br>
+
+```{r scatter, include= TRUE, echo = FALSE, warning=FALSE, eval = !empty_mc}
+plt1 <- ggplot(mc,aes_string(x = colnames(mc)[2],colnames(mc)[1])) +
+  geom_point(colour = "#009870") +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+  theme_classic()+
+  xlab(as.character(metadata$name_legacy[2])) +
+  ylab(as.character(metadata$name_legacy[1]))
+plt1
+
+```
+
+### Unterschiedsdiagramme
+
+</br>
+Diese Diagramme zeigen die Ergebnisse des Vergleichstest `r metadata$name_legacy[2]` auf der X-Achse und die absolute oder relative Abweichung des Kandidatentest `r metadata$name_legacy[1]` auf der Y-Achse. Je näher die Punkte an der 0 Horizontalen sind, desto ähnlicher sind die Tests. 
+
+```{r difference plots, echo = FALSE, warning = FALSE, out.height= "40%", eval = !empty_mc}
+dif_sdc <- mc[,1] - mc[,2]
+dif_sdc <- data.frame(cbind(dif_sdc, mc[,2]))
+colnames(dif_sdc) <- c("Kandidatentest","Vergleichstest")
+
+
+plt_sc1 <- ggplot(dif_sdc, aes_string(colnames(dif_sdc)[2],colnames(dif_sdc)[1])) +
+  geom_point(colour = "#009870") +
+  geom_hline(yintercept = 0, linetype = "dashed")+
+  theme_classic()+
+  xlab("Vergleichstest") +
+  ylab("Absoluter Unterschied")
+plt_sc1 <- ggMarginal(plt_sc1, type="histogram", fill = "#009870", margins = "y")
+
+dif_cvc <- (mc[,1] - mc[,2])/mc[,1]
+dif_cvc <- data.frame(cbind(dif_cvc,mc[,2]))
+colnames(dif_cvc) <- c("Kandidatentest","Vergleichstest")
+
+plt_sc2 <- ggplot(dif_cvc, aes_string(colnames(dif_cvc)[2],colnames(dif_cvc)[1])) +
+  geom_point(colour = "#009870") +
+  geom_hline(yintercept = 0, linetype = "dashed")+
+  theme_classic()+
+  xlab("Vergleichstest") +
+  ylab("Relativer Unterschied [%]")
+plt_sc2 <- ggMarginal(plt_sc2, type="histogram", fill = "#009870", margins = "y")
+
+ggarrange(plt_sc1,plt_sc2)
+
+
+```
+
+</br>
+
+</br>
+
+Diese Diagramme zeigen den Rang der Ergebnisse des Vergleichstest `r metadata$name_legacy[2]` auf der X-Achse und die absolute oder relative Abweichung des Kandidatentest `r metadata$name_legacy[1]` auf der Y-Achse. Je näher die Punkte an der 0 Horizontalen sind, desto ähnlicher sind die Tests. 
+
+```{r difference_plot_2, echo= FALSE, warning= FALSE, out.height= "40%", eval = !empty_mc}
+rank <- mc
+colnames(rank) <- c("Kandidattest","Vergleichstest")
+rank <- rank[order(rank$Vergleichstest),]
+rank$rank <- c(1:nrow(rank))  
+rank$diff <- rank$Kandidattest - rank$Vergleichstest
+rank$diffp <- rank$diff / rank$Vergleichstest
+
+plt_ranksc1 <- ggplot(rank, aes(x = rank, y = diff)) +
+  geom_point(colour = "#009870") +
+  geom_hline(yintercept = 0, linetype = "dashed")+
+  theme_classic()+
+  xlab("Rang der Probe im Vergleichstest") +
+  ylab("Absoluter Unterschied")
+plt_ranksc1 <- ggMarginal(plt_ranksc1, type="histogram", fill = "#009870", margins = "y")
+
+
+plt_ranksc2 <- ggplot(rank, aes(x = rank, y = diffp)) +
+  geom_point(colour = "#009870") +
+  geom_hline(yintercept = 0, linetype = "dashed")+
+  theme_classic()+
+  xlab("Rang der Probe im Vergleichstest") +
+  ylab("Relativer Unterschied [%]")
+plt_ranksc2 <- ggMarginal(plt_ranksc2, type="histogram", fill = "#009870", margins = "y")
+
+ggarrange(plt_ranksc1, plt_ranksc2)
+```
+
+\newpage
+</br>
+
+Das Bland-Altman Diagramm zeigt die Differenz der beiden Methoden gegen den Mittelwert der beiden Methoden.
+Die gestrichelten Linien zeigen den 2S-Bereich des Mittelwertes an. Alle Punkte sollten im Bereich zwischen
+der beiden gestrichelten Linien fallen.
+
+</br>
+```{r ba, echo = FALSE, warning = FALSE, eval = !empty_mc}
+ba <- bland.altman.plot(mc[,1],mc[,2],graph.sys = "ggplot2")
+ba+
+  theme_classic()+
+  xlab("Mittelwert der Messung") +
+  ylab("Mittelwertdifferenz") 
+```
+
+## Korrelationstestung
+### Pearson's $r$
+```{r cor_leg_2, include = FALSE, warning= FALSE, eval = !empty_mc}
+ci_p_cor <- ci_cor(data.frame(mc[,c(1,2)]),method = "pearson", seed = 123)
+ci_t_cor <- ci_cor(data.frame(mc[,c(1,2)]),method = "kendall", type = "bootstrap", seed = 123)
+```
+Die Bestimmung des Korrelationskoeffizienten für die beiden Vergleichmessungen von
+`r metadata$name_legacy[1]` (Testmethode) and `r metadata$name_legacy[2]` (Referenzmethode) nach Pearson's $r$:
+Pearson's $r$ beträgt **`r round(ci_p_cor$estimate,3)`**. Das 95%-Konfidenzintervall umschliesst den Bereich von
+`r round(ci_p_cor$interval[1],3)` bis `r round(ci_p_cor$interval[2],3)`. 
+
+### Kendall's $\tau$
+Die Bestimmung des Korrelationskoeffizienten für die beiden Vergleichmessungen von
+`r metadata$name_legacy[1]` (Testmethode) and `r metadata$name_legacy[2]` (Referenzmethode) nach Kendall's $\tau$:
+Kendall's $\tau$ beträgt **`r round(ci_t_cor$estimate,3)`**. Das 95%-Konfidenzintervall umschliesst den Bereich von
+`r round(ci_t_cor$interval[1],3)` bis `r round(ci_t_cor$interval[2],3)`. Dies wurde mit Hilfe von "bootstrapping" (B = 9999) berechnet.
+
+
+## Passing-Bablok-Regression
+Die Regression nach Passing-Bablok gibt Steigung (Slope) und Achsenabschnitt (Intercept) an mit 
+jeweiligen unteren  und oberen Grenzen des 95%-Konfidenzintervalls. Der Standardfehler wird nicht berechnet.
+Liegt **kein** signifikanter Bias vor umschliesst das 95%-Konfidenzintervall der Steigung die 1 und das 95%-KI des Achsenabschnitts die 0. 
+
+</br>
+```{r pb_leg_2, echo = FALSE, warning= FALSE, eval = !empty_mc}
+pb <- mcreg(as.matrix(mc[,c(1,2)]), method.reg = "PaBa", method.bootstrap.ci = "BCa")
+reg <- pb@para
+reg <- round(as.data.frame(reg),4)
+reg <- as.data.frame(reg) %>%
+  rownames_to_column(var = "Model")
+reg <- as_tibble(reg)
+colnames(reg) <- c("Model","Punktschätzung","SE" ,"Unteres KI", "Oberes KI")
+reg$SE <- NULL
+
+ft2 <- flextable(as.data.frame(reg))
+ft2 <- compose(ft2, j = 1 ,part = "header", value = as_paragraph(""))
+ft2 <- autofit(ft2)
+ft2
+plot(pb)
+```
+`r if(empty_mc){"\\end{comment}"}`
+`r if(!empty_mc){"\\begin{comment}"}`
+## Fehler
+In diesem Abschnitt liegt ein Fehler vor. Bitte überprüfen Sie ob das Arbeitsblatt "Methodenvergleich" unerlaubte Sonderzeichen enthält oder leer ist. Vielen Dank!
+`r if(!empty_mc){"\\end{comment}"}`

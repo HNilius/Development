@@ -1,0 +1,251 @@
+---
+output:
+  pdf_document:
+    latex_engine: xelatex
+mainfont: Open Sans
+
+---
+
+```{r setup_legacy, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readxl)
+library(dplyr)
+library(mcr)
+library(flextable)
+library(confintr)
+library(tibble)
+library(BlandAltmanLeh)
+library(ggplot2)
+library(hrbrthemes)
+
+legacy <- legacy_df
+```
+
+# Präambel
+Dieses Dokument ist ein Formblatt im Qualitätsmanagementsystem des Zentrums für
+Labormedizin (ZLM Bern) und dient der Methodenverifikation kommerieller Tests.
+Die Packungsbeilage für die zu verifzierende Methode `r metadata$name_legacy[1]`
+ist als Anlage angefügt. Die Vergleichsmethode ist `r metadata$name_legacy[2]`.
+Das Messprinzip ist in der beigefügten Packungsbeilage beschrieben.
+Die dieser Methodenverifikation zugrundeliegenden Rohdaten werden den Qualitätsmanagement-
+Anforderungen des ZLM entsprechend separat archieviert. Zu Dokumentationszwecken werden für die 
+Auswertung verwendeten Daten als Kopie unter "Datengrundlage" in einer Datentabelle
+
+<br>
+
+# Vorgegebene Werte
+
+## Levelvorgaben (Zielwertvvorgaben des QC-Herstellers)
+Berechnet werden die Kennzahlen für `r metadata$name_legacy[1]``:
+```{r Vorgaben,include = FALSE}
+tmp_vor = ""
+for(i in 1:metadata$n_lvl[1]){
+  tmp <- paste0("Vorgabe Level ",i,": ", metadata$tv[i], "\\newline")
+  tmp_vor <- paste(tmp_vor,tmp)
+}
+``` 
+`r tmp_vor`
+
+## Variablen
+Faktor der Messunsicherheit:`r metadata$fct[1]` 
+
+## (Hersteller-)Vorgaben
+Hinweise zu den angewandten (Hersteller-)Vorgaben finden sich unter "Bewertung" 
+in der beigefügten Packungsbeilage und ggf. als übersicht in einer der 
+Methodenverifikation vorangestellten gesonderten Vorgabentabelle
+
+# Material
+Die Methode wurde mt Serum als Untersuchugnsmaterial verifiziert
+
+# Datengrundlage
+Die eingeladenen Daten stellen sich wie folgt dar
+
+\newpage
+## Datentabelle
+```{r tab1_leg, echo = FALSE, warning= FALSE}
+ft1 <- flextable(legacy)
+ft1 <- autofit(ft1)
+ft1
+
+```
+\newpage
+## Anzahlen
+
+Die Anzahlen der gemessenen Werte sind wie folgt:
+```{r Anzahlen_leg,include = FALSE}
+tmp_anz = ""
+for(i in 1:ncol(legacy)){
+  tmp <- paste0(colnames(legacy)[i],": ",sum(!is.na(legacy[i])), " Werte \\newline")
+  if(i < 3){
+    tmp <- paste0(colnames(legacy)[i],": ",sum(!is.na(legacy[i])), " Werte (Methode ",i,") \\newline")
+  }
+  tmp_anz <- paste(tmp_anz,tmp)
+}
+``` 
+`r tmp_anz`
+
+# Variationskoeffizenten
+
+## in Serie
+Variatzionskoeffizenten in Serie für die Angegebenen Levels:
+```{r cv_ser_leg, include= FALSE, warnings = FALSE}
+tmp_cv <- ""
+cvs_ser <- c()
+for(i in 1:metadata$n_lvl[1]){
+  sd_tmp <- sd(as.data.frame(legacy)[,i+2], na.rm = TRUE)
+  mean_tmp <- mean(as.data.frame(legacy)[,i+2], na.rm =  TRUE)
+  cv <- round((sd_tmp/mean_tmp)*100,2)
+  leg <- sum(!is.na(legacy[,i+2]))
+  tmp <- paste0("Variationskoeffizent für Level ", i, " (Zielwert: ", metadata$tv[i],") in Serie: ", cv, " % \\newline")
+  tmp_cv <- paste(tmp_cv,tmp)
+  cvs_ser <- c(cvs_ser, rep(cv,leg))
+}
+
+w_mean_ser <- round(mean(cvs_ser),2)
+```
+`r tmp_cv`
+
+<br>
+
+Messanzahl-gewichteter Mittelwert der VKs in Serie: `r w_mean_ser` %.
+
+## day-to-day
+Variationskoeffizenten day-to-day für die angegebenen Levels:
+
+```{r cv_dtd_leg, include= FALSE, warnings = FALSE}
+tmp_cv_ser <- ""
+cvs_dtd <- c()
+for(i in 1:metadata$n_lvl[1]){
+  sd_tmp <- sd(as.data.frame(legacy)[,i+2+metadata$n_lvl[1]], na.rm = TRUE)
+  mean_tmp <- mean(as.data.frame(legacy)[,i+2+metadata$n_lvl[1]], na.rm =  TRUE)
+  cv <- round((sd_tmp/mean_tmp)*100,2)
+  leg <- sum(!is.na(legacy[,i+2+metadata$n_lvl[1]]))
+  tmp <- paste0("Variationskoeffizent für Level ", i, " (Zielwert: ", metadata$tv[i],") day-to-day: ", cv, " % \\newline")
+  tmp_cv_ser <- paste(tmp_cv_ser,tmp)
+  cvs_dtd <- c(cvs_dtd,rep(cv,leg))
+}
+w_mean_dtd <- round(mean(cvs_dtd),2)
+```
+`r tmp_cv_ser`
+
+<br>
+
+Messanzahl-gewichteter Mittelwert der VKs day-to-day: `r w_mean_dtd` %.
+
+
+# Bias
+Bias bezeichnet die prozentuale Abweichung des Mittelwerts vom wahren Wert für die jeweiligen Levels der Serienmessungen. 
+```{r bias_leg, include= FALSE, warning= FALSE}
+tmp_bias <- ""
+biases <- c()
+for(i in 1:metadata$n_lvl[1]){
+  mean_tmp <- mean(as.data.frame(legacy)[,i+2], na.rm =  TRUE)
+  bias_tmp <- ((mean_tmp-metadata$tv[i])/mean_tmp)*100 
+  tmp <- paste0("Bias für Level ", i, "(Zielwert: ", metadata$tv[i]," ) in Serie: ", round(bias_tmp,2), " % \\newline")
+  tmp_bias <- paste(tmp_bias, tmp)
+  leg <- sum(!is.na(legacy[,i+2]))
+  biases <- c(biases, rep(bias_tmp,leg))
+}
+w_mean_bias <- mean(biases, na.rm = TRUE)
+```
+`r tmp_bias`
+<br>
+
+Messanzahl-gewichteter Mittelwert des Bias in Serie: `r round(w_mean_bias,2)` %.
+
+# Messunsicherheit
+Die Messunsicherheit (MU) berechnet sich aus 
+<br>
+
+$MU = k*\sqrt{CV^2 + Bias^2}$
+
+```{r uc_leg, include= FALSE, warning= FALSE}
+tmp_uc <- ""
+mus <- c()
+for(i in 1:metadata$n_lvl[1]){
+  cv_u <- unique(cvs_ser)[i]
+  bias_u <- unique(biases)[i]
+  leg <- sum(!is.na(legacy[,i+2]))
+  mu <- metadata$fct * sqrt(cv_u^2 + bias_u^2)
+  mus <- c(mus,rep(mu,leg))
+  tmp <- paste0("Messunsicherheit für Level ", i," (Zielwert: ", metadata$tv[i],"): ", round(mu[1],2), " % \\newline")
+  tmp_uc <- paste(tmp_uc,tmp)
+}
+w_mean_mus <- mean(mus, na.rm = TRUE)
+```
+`r tmp_uc`
+
+<br>
+
+Messanzahl gewichtete Mittelwert der Messunsicherheit in Serie: `r round(w_mean_mus,2)` %.
+
+# Standardabweichung 
+
+Die Standardabwichung wird für alle Levels 
+```{r sd_leg, include= FALSE, warning= FALSE}
+tmp_sd <- ""
+sds <- c()
+sds_perc <- c()
+for(i in 1:metadata$n_lvl[1]){
+  sd_tmp <- sd(as.data.frame(legacy)[,i+2], na.rm = TRUE)
+  sd_perc <- (sd_tmp/metadata$tv[i])*100
+  tmp <- paste0("Standardabweichung für Level ", i," (Zielwert: ", metadata$tv[i],") in Serie: ", round(sd_tmp,2), " (",round((sd_tmp/metadata$tv[i])*100,2), " %)  \\newline")
+  tmp_sd <- paste(tmp_sd,tmp)
+  sds <- c(sds,sd_tmp)
+  sds_perc  <- c(sds_perc, sd_perc)
+}
+w_mean_sd <- mean(sds, na.rm = TRUE)
+w_mean_sd_perc <- mean(sds_perc, na.rm = TRUE)
+```
+`r tmp_sd`
+
+<br>
+
+Messanzahl gewichtete Mittelwert der Standardabweichung in Serie: `r round(w_mean_sd,2)`. \newline
+Messanzahl gewichtete Mittelwert der Standardabweichung in Prozent in Serie: `r round(w_mean_sd_perc,2)` %.
+
+# Korrelationstestung
+
+## Pearson's $r$
+```{r cor_leg, include = FALSE, warning= FALSE}
+ci_p_cor <- ci_cor(data.frame(legacy[,c(1,2)]),method = "pearson", seed = 123)
+ci_t_cor <- ci_cor(data.frame(legacy[,c(1,2)]),method = "kendall", type = "bootstrap", seed = 123)
+```
+Die Bestimmung des Korrelationskoeffizienten für die beiden Vergleichmessungen von
+`r metadata$name_legacy[1]` (Testmethode) and `r metadata$name_legacy[2]` (Referenzmethode) nach Pearson's $r$:
+Pearson's $r$ beträgt `r round(ci_p_cor$estimate,3)`. Das 95%-Konfidenzintervall umschliesst den Bereich von
+`r round(ci_p_cor$interval[1],3)` bis `r round(ci_p_cor$interval[2],3)`. 
+
+## Kendall's $\tau$
+Die Bestimmung des Korrelationskoeffizienten für die beiden Vergleichmessungen von
+`r metadata$name_legacy[1]` (Testmethode) and `r metadata$name_legacy[2]` (Referenzmethode) nach Kendall's $\tau$:
+Kendall's $\tau$ beträgt `r round(ci_t_cor$estimate,3)`. Das 95%-Konfidenzintervall umschliesst den Bereich von
+`r round(ci_t_cor$interval[1],3)` bis `r round(ci_t_cor$interval[2],3)`. Dies wurde mit Hilfe von "bootstrapping" (B = 9999) berechnet.
+
+# Passing-Bablok-Regression
+Die Regression nach Passing-Bablok gibt Steigung (Slope) und Achsenabschnitt (Intercept) an mit 
+jeweiligen unteren  und oberen Grenzen des 95%-Konfidenzintervalls (KI). Der Standardfehler wird nicht berechnet
+```{r pb_leg, echo = FALSE, warning= FALSE}
+pb <- mcreg(as.matrix(legacy[,c(1,2)]), method.reg = "PaBa", method.bootstrap.ci = "BCa")
+reg <- pb@para
+reg <- round(as.data.frame(reg),4)
+reg <- as.data.frame(reg) %>%
+  rownames_to_column(var = "Model")
+reg <- as_tibble(reg)
+colnames(reg) <- c("Model","Punktschätzung","SE" ,"Unteres KI", "Oberes KI")
+reg$SE <- NULL
+
+ft2 <- flextable(as.data.frame(reg))
+ft2 <- compose(ft2, j = 1 ,part = "header", value = as_paragraph(""))
+ft2 <- autofit(ft2)
+ft2
+plot(pb)
+```
+
+# Bland-Altman-Plot
+```{r bland_leg, echo= FALSE}
+BlandAltmanLeh::bland.altman.plot(as.numeric(data.frame(legacy)[,2]),as.numeric(data.frame(legacy)[,1]), graph.sys = "ggplot2") +
+  theme_classic()+
+  xlab("Mittelwert der Messung") +
+  ylab("Mittelwertdifferenz") 
+```

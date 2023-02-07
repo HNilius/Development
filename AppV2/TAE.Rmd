@@ -1,0 +1,157 @@
+---
+output:
+  pdf_document:
+    latex_engine: xelatex
+mainfont: Open Sans
+params: 
+  tae: tae
+  metadata: metadata
+---
+
+```{r setup_tae, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readxl)
+library(dplyr)
+library(mcr)
+library(flextable)
+library(tibble)
+library(ggplot2)
+library(ggpubr)
+
+empty_tae <- FALSE
+outsigma <- NULL
+tae <- data.frame(tae)
+if(nrow(tae) == 0){
+  empty_tae <- TRUE
+}
+
+```
+```{r tae_check, include= FALSE, eval = !empty_tae}
+tae <- apply(tae,2,gsub,pattern = "<|>", replacement = "")
+tae <- apply(tae,2,gsub,pattern = ",", replacement = ".")
+tae <- data.frame(apply(tae,2,as.numeric))
+if(nrow(tae) == 0){
+  empty_tae <- TRUE
+}
+```
+
+
+
+# Totaler Analytischer Fehler (CLSI 21)
+`r if(empty_tae){"\\begin{comment}"}`
+Der totale analytische Fehler wird aufgrund von `r nrow(tae)` Messungen berechnet. Der Kandidatentest ist `r metadata$name_legacy[1]` und der Vergleichstest ist `r metadata$name_legacy[2]`. Der totale analytische Fehler wird errechnet als das zentrale nicht-parametrische 95% Konfidenzintervall des Unterschieds zwischen dem  Kandidatentest und dem Vergleichstest.
+
+
+```{r calc_tae, include =FALSE, warning = FALSE, eval = !empty_tae}
+
+if(ncol(tae) > 2){
+  tae$mean_c <- rowMeans(tae[,c(2:ncol(tae))], na.rm = TRUE)
+} else {
+  tae$mean_c <- tae[,2]
+}
+
+tae$diff <- tae[,1] - tae$mean_c
+tae$perdiff <- tae$diff / tae$mean_c
+
+
+```
+
+</br>
+
+## Visualisierung
+Dieses Diagramm zeigt die Abweichung absolute und relative Abweichung des Kandidatentest
+von der Vergleichsmethode.
+
+```{r hist_dif, echo=FALSE,warning=FALSE, eval = !empty_tae}
+abs_dif <- ggplot(tae,aes(x = diff)) +
+  geom_histogram(bins = 30, fill = "#009870")+
+  theme_pubclean() + 
+  xlab(paste0("Absolute Abweichung [", metadata$unit,"]")) +
+  ylab("Anzahl")+
+  xlim(c(-max(abs(tae$diff), na.rm = TRUE),max(abs(tae$diff), na.rm = TRUE)))
+
+
+rel_dif <- ggplot(tae,aes(x = perdiff*100)) +
+  geom_histogram(bins = 30, fill = "#009870")+
+  theme_pubclean() + 
+  xlab("Relative Abweichung [%]") +
+  ylab("")+
+  xlim(c(-max(abs(tae$perdiff*100), na.rm = TRUE),max(abs(tae$perdiff*100), na.rm = TRUE)))
+
+
+ggarrange(abs_dif,rel_dif)
+```
+
+```{r calc_dif, warning = FALSE, echo = FALSE, eval = !empty_tae}
+tae_abs <- tae[order(tae$diff, decreasing = FALSE),]
+tae_abs$rank <- c(1:nrow(tae_abs))
+lrp_abs <- 0.5 + nrow(tae_abs)*0.025 
+urp_abs <- 0.5 + nrow(tae_abs)*0.975
+lower_tca_abs <- (1-lrp_abs%%1)*tae_abs$diff[tae_abs$rank == floor(lrp_abs)] + lrp_abs%%1 * tae_abs$diff[tae_abs$rank == floor(lrp_abs)+1]
+if(lrp_abs%%1 == 0){
+  lower_tca_abs <- tae_abs$diff[tae_abs$rank == lrp_abs]
+}
+upper_tca_abs <- (1-urp_abs%%1)*tae_abs$diff[tae_abs$rank == floor(urp_abs)] + urp_abs%%1 * tae_abs$diff[tae_abs$rank == floor(urp_abs)+1]
+if(urp_abs%%1 == 0){
+  upper_tca_abs <- tae_abs$diff[tae_abs$rank == urp_abs]
+}
+
+
+tae_rel <- tae[order(tae$perdiff, decreasing = FALSE),] #Orders the Results
+tae_rel$rank <- c(1:nrow(tae_rel))
+lrp_rel <- 0.5 + nrow(tae_rel)*0.025 
+urp_rel <- 0.5 + nrow(tae_rel)*0.975
+lower_tca_rel <- (1-lrp_rel%%1)*tae_rel$perdiff[tae_rel$rank == floor(lrp_rel)] + lrp_rel%%1 * tae_rel$perdiff[tae_rel$rank == floor(lrp_rel)+1] * 100
+if(lrp_rel%%1 == 0){
+  lower_tca_rel <- tae_rel$perdiff[tae_rel$rank == lrp_rel]
+}
+upper_tca_rel <- (1-urp_rel%%1)*tae_rel$perdiff[tae_rel$rank == floor(urp_rel)]*100 + urp_rel%%1 * tae_rel$perdiff[tae_rel$rank == floor(urp_rel)+1]*100
+if(urp_rel%%1 == 0){
+  upper_tca_rel <- tae_rel$perdiff[tae_rel$rank == urp_rel] *100
+}
+
+
+```
+
+<br>
+
+Der absolute totale analytische Fehler ist zwischen **`r paste0(round(lower_tca_abs,4),"** und **",round(upper_tca_abs,4), " ",metadata$unit[1])`**. Der relative analytische Fehler erstreckt sich von 
+**`r paste0(round(lower_tca_rel,4),"** bis **",round(upper_tca_rel,4), " %")`**.
+
+## Bewertung 
+```{r sigma, echo = FALSE, eval = !empty_tae}
+low_atr <- metadata$ATE[1]/lower_tca_abs # Lower ATE/TAE ratio
+upr_atr <- metadata$ATE[2]/upper_tca_abs # Upper ATE/TAE ratio
+
+fin_atr<- ifelse(low_atr < upr_atr, low_atr, upr_atr)
+
+
+cuts <- c(0,1,1.25,1.5,1.75,2.25,2.5,3)
+sigmas <- c("2","3","3 - 4","4 - 6","4 - >6","5 - >6","6 - >6",">6")
+outsigma <- sigmas[findInterval(fin_atr,cuts)]
+
+```
+
+</br>
+
+Die ATE:TAE Ratio gibt das Verhältnis zwischen dem erlaubten Gesamtfehler und dem errechneten totalen Fehler an. Sie ist für den Test `r metadata$name_legacy[1]` **`r round(fin_atr,2)`**. Dies entspricht ungefähr einen Simga-Wert von **`r outsigma`**.
+
+
+```{r graph_ae, echo= FALSE, warning = FALSE, eval = !empty_tae}
+ggplot(tae_abs, aes(x = mean_c, y = diff)) +
+  geom_point(fill = "#009870") +
+  geom_hline(yintercept = metadata$ATE[1], linetype = "dashed") +
+  geom_hline(yintercept = metadata$ATE[2], linetype = "dashed") +
+  geom_text(aes(0, metadata$ATE[1],label =  metadata$ATE[1], vjust = +1.5)) +
+  geom_text(aes(0,metadata$ATE[2],label = metadata$ATE[2], vjust = -1)) +
+  theme_pubclean()+
+  xlab(paste0("Vergleichsmethode"," [",metadata$unit,"]"))+
+  ylab(paste0("Absolute Abweichung"," [",metadata$unit,"]"))
+```
+
+`r if(empty_tae){"\\end{comment}"}`
+
+`r if(!empty_tae){"\\begin{comment}"}`
+## Fehler
+In diesem Abschnitt liegt ein Fehler vor. Bitte überprüfen Sie ob das Arbeitsblatt "Totaler analytischer Fehler" unerlaubte Sonderzeichen enthält oder leer ist. Vielen Dank!
+`r if(!empty_tae){"\\end{comment}"}`
